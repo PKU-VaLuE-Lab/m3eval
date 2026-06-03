@@ -1,0 +1,6 @@
+group: m3eval
+task:
+  - m3eval_memory_interference
+  - m3eval_split_screen
+  - m3eval_interleaved
+  - m3eval_nback

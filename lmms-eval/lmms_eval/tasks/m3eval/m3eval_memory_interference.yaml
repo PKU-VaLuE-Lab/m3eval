@@ -1,0 +1,39 @@
+task: "m3eval_memory_interference"
+include: _generation_kwargs_yaml
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: data/m3eval/qa_root/memory_interference/memory_interference_qa.json
+test_split: test
+output_type: generate_until
+
+doc_to_visual: !function m3eval_utils.public_doc_to_visual
+doc_to_text: !function m3eval_utils.public_doc_to_text
+doc_to_target: "answer"
+
+process_results: !function m3eval_utils.m3eval_memory_interference_process_results
+metric_list:
+  - metric: m3eval_memory_interference_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_memory_interference_proactive_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_memory_interference_retroactive_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_memory_interference_proactive_intrusion_rate
+    aggregation: mean
+    higher_is_better: false
+  - metric: m3eval_memory_interference_retroactive_intrusion_rate
+    aggregation: mean
+    higher_is_better: false
+
+lmms_eval_specific_kwargs:
+  default:
+    pre_prompt: ""
+    post_prompt: "\nGiven the question above with the provided choices, provide your answer directly without extra explanation.\nYour final line must be exactly:\nThe final answer is X\nX must be one uppercase option letter.\n"
+
+metadata:
+  version: 1.0
+  total_frames: 96

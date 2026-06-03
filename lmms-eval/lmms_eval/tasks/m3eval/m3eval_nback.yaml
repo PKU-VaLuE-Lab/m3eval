@@ -1,0 +1,45 @@
+task: "m3eval_nback"
+include: _generation_kwargs_yaml
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: data/m3eval/questions/nback_questions.jsonl
+test_split: test
+output_type: generate_until
+
+doc_to_visual: !function m3eval_utils.public_nback_doc_to_visual
+doc_to_text: !function m3eval_utils.public_nback_doc_to_text
+doc_to_target: "answer"
+
+process_results: !function m3eval_utils.public_nback_process_results
+metric_list:
+  - metric: m3eval_nback_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_action_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_scene_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_n1_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_n2_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_n3_accuracy
+    aggregation: mean
+    higher_is_better: true
+  - metric: m3eval_nback_n4_accuracy
+    aggregation: mean
+    higher_is_better: true
+
+lmms_eval_specific_kwargs:
+  default:
+    pre_prompt: ""
+    post_prompt: "\nGiven the question above, provide your answer directly without extra explanation.\nYour final line must be exactly one of:\nThe final answer is Yes\nThe final answer is No\n"
+
+metadata:
+  version: 1.0
+  total_frames: 96
