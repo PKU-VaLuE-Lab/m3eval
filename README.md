@@ -1,7 +1,7 @@
 <h1 align="center">M³Eval: Multi-Modal Memory Evaluation through Cognitively-Grounded Video Tasks</h1>
 
 <p align="center">
-  <a href="https://arxiv.org/search/?query=M3Eval%3A+Multi-Modal+Memory+Evaluation+through+Cognitively-Grounded+Video+Tasks&searchtype=all&source=header"><img src="https://img.shields.io/badge/Paper-arXiv-b31b1b" alt="Paper"></a>
+  <a href="https://arxiv.org/abs/2606.05008"><img src="https://img.shields.io/badge/Paper-arXiv-b31b1b" alt="Paper"></a>
   <a href="https://pku-value-lab.github.io/m3eval-homepage/"><img src="https://img.shields.io/badge/Project-Page-blue" alt="Project Page"></a>
   <a href="https://huggingface.co/datasets/PKU-VaLuE-Lab/m3eval"><img src="https://img.shields.io/badge/Hugging%20Face-Dataset-yellow" alt="Hugging Face Dataset"></a>
   <a href="https://github.com/PKU-VaLuE-Lab/m3eval"><img src="https://img.shields.io/badge/GitHub-Code-black" alt="GitHub Code"></a>
@@ -28,7 +28,7 @@
 
 ## News
 
-- **2026-6-4**: We released the M³Eval benchmark, code, and project page.
+- **2026-05-21**: We released the M³Eval benchmark, code, and project page.
 
 ## M³Eval Overview
 
@@ -202,7 +202,7 @@ If you use M³Eval in your work, please cite:
 @article{huang2026m3eval,
   title   = {M3Eval: Multi-Modal Memory Evaluation through Cognitively-Grounded Video Tasks},
   author  = {Huang, Jie and Liu, Ruixun and Sun, Sirui and Yang, Xinyi and Li, Yin and Zhu, Yixin and Zhong, Yiwu},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  journal = {arXiv preprint arXiv:2606.05008},
   year    = {2026}
 }
 ```
