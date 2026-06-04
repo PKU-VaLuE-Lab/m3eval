@@ -28,7 +28,7 @@
 
 ## News
 
-- **2026-05-21**: We released the M³Eval benchmark, code, and project page.
+- **2026-6-4**: We released the M³Eval benchmark, code, and project page.
 
 ## M³Eval Overview
 
