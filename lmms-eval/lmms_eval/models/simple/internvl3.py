@@ -1,4 +1,7 @@
+import math
 from datetime import timedelta
+from importlib import import_module
+from types import MethodType
 from typing import List, Optional, Set, Tuple
 
 import numpy as np
@@ -9,12 +12,6 @@ from accelerate import Accelerator, DistributedType
 from accelerate.state import AcceleratorState
 from accelerate.utils import InitProcessGroupKwargs
 from decord import VideoReader, cpu
-from loguru import logger as eval_logger
-from PIL import Image
-from torchvision.transforms.functional import InterpolationMode
-from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
-
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
@@ -25,6 +22,11 @@ from lmms_eval.models.model_utils.video_failure_registry import (
     is_registry_eligible_video_failure,
 )
 from lmms_eval.tasks.m3eval.parsing_utils import VIDEO_READ_FAILURE_SENTINEL
+from loguru import logger as eval_logger
+from PIL import Image
+from torchvision.transforms.functional import InterpolationMode
+from tqdm import tqdm
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -34,6 +36,38 @@ DEFAULT_GEN_KWARGS = dict(
     max_new_tokens=1024,
     do_sample=False,
 )
+
+
+def split_internvl_model(num_layers: int) -> dict[str, int]:
+    """Place the vision tower and boundary LLM modules on GPU 0."""
+    world_size = torch.cuda.device_count()
+    if world_size < 2:
+        raise ValueError("device_map=split requires at least two visible GPUs")
+
+    layers_per_gpu = math.ceil(num_layers / (world_size - 0.5))
+    allocation = [layers_per_gpu] * world_size
+    allocation[0] = math.ceil(allocation[0] * 0.5)
+
+    device_map: dict[str, int] = {}
+    layer_index = 0
+    for device_index, count in enumerate(allocation):
+        for _ in range(count):
+            if layer_index >= num_layers:
+                break
+            device_map[f"language_model.model.layers.{layer_index}"] = device_index
+            layer_index += 1
+
+    device_map.update(
+        {
+            "vision_model": 0,
+            "mlp1": 0,
+            "language_model.model.embed_tokens": 0,
+            "language_model.model.norm": 0,
+            "language_model.lm_head": 0,
+            f"language_model.model.layers.{num_layers - 1}": 0,
+        }
+    )
+    return device_map
 
 
 def build_transform(input_size: int) -> T.Compose:
@@ -237,7 +271,7 @@ class InternVL3(lmms):
         modality: Input modality, either "image" or "video".
         device: Device to use for inference.
         device_map: Device mapping strategy. Use "auto" for multi-GPU.
-        batch_size: Batch size (must be 1 for this model).
+        batch_size: Batch size per generate call.
         num_frame: Number of frames to sample for video inputs.
         max_num: Maximum number of image tiles.
         use_flash_attn: Whether to use flash attention.
@@ -254,6 +288,8 @@ class InternVL3(lmms):
         max_num: int = 12,
         total_max_num: int = 64,
         input_size: int = 448,
+        vision_batch_size: int = 0,
+        llm_attention_implementation: str = "",
         use_flash_attn: bool = True,
         **kwargs,
     ):
@@ -264,9 +300,10 @@ class InternVL3(lmms):
         self.max_num = max_num
         self.total_max_num = total_max_num
         self.input_size = input_size
+        self.vision_batch_size = int(vision_batch_size)
+        self.llm_attention_implementation = str(llm_attention_implementation).strip()
 
         batch_size_int = int(batch_size)
-        assert batch_size_int == 1, f"Batch size should be 1 for InternVL3, but got {batch_size_int}."
         self.batch_size_per_gpu = batch_size_int
 
         accelerator_kwargs = InitProcessGroupKwargs(timeout=timedelta(weeks=52))
@@ -277,9 +314,15 @@ class InternVL3(lmms):
         if accelerator.num_processes > 1:
             self._device = torch.device(f"cuda:{accelerator.local_process_index}")
             self.device_map = f"cuda:{accelerator.local_process_index}"
-        elif accelerator.num_processes == 1 and device_map == "auto":
+        elif accelerator.num_processes == 1 and device_map == "split":
             self._device = torch.device("cuda:0")
-            self.device_map = "auto"
+            config = AutoConfig.from_pretrained(self.path, trust_remote_code=True)
+            num_layers = int(config.llm_config.num_hidden_layers)
+            self.device_map = split_internvl_model(num_layers)
+            self._use_auto_device_map = True
+        elif accelerator.num_processes == 1 and device_map in {"auto", "balanced", "balanced_low_0", "sequential"}:
+            self._device = torch.device("cuda:0")
+            self.device_map = device_map
             self._use_auto_device_map = True
         else:
             self._device = torch.device(f"cuda:{accelerator.local_process_index}")
@@ -293,6 +336,22 @@ class InternVL3(lmms):
             trust_remote_code=True,
             device_map=self.device_map,
         ).eval()
+        if self.llm_attention_implementation:
+            self._model.language_model.config._attn_implementation = self.llm_attention_implementation
+            for layer in self._model.language_model.model.layers:
+                layer.self_attn.config._attn_implementation = self.llm_attention_implementation
+            eval_logger.info("Using {} attention for the language model", self.llm_attention_implementation)
+        if self.vision_batch_size > 0:
+            original_extract_feature = self._model.extract_feature
+
+            def chunked_extract_feature(model_self, pixel_values):
+                if pixel_values.shape[0] <= self.vision_batch_size:
+                    return original_extract_feature(pixel_values)
+                chunks = (original_extract_feature(chunk) for chunk in pixel_values.split(self.vision_batch_size, dim=0))
+                return torch.cat(list(chunks), dim=0)
+
+            self._model.extract_feature = MethodType(chunked_extract_feature, self._model)
+            eval_logger.info("Using chunked vision encoding with batch size {}", self.vision_batch_size)
         self._config = self._model.config
         self._tokenizer = AutoTokenizer.from_pretrained(self.path, trust_remote_code=True, use_fast=False)
 
@@ -320,7 +379,7 @@ class InternVL3(lmms):
             self._rank = self.accelerator.local_process_index
             self._world_size = self.accelerator.num_processes
         elif self._use_auto_device_map:
-            eval_logger.info("Using auto device map for tensor parallelism")
+            eval_logger.info("Using {} device map for model parallelism", self.device_map)
             self._rank = 0
             self._world_size = 1
         else:
@@ -425,6 +484,169 @@ class InternVL3(lmms):
                 new_list.append(j)
         return new_list
 
+    def _normalize_generation_kwargs(self, gen_kwargs: dict) -> dict:
+        generation_kwargs = dict(gen_kwargs)
+        generation_kwargs.pop("until", None)
+        for key, value in DEFAULT_GEN_KWARGS.items():
+            generation_kwargs.setdefault(key, value)
+        for key in list(generation_kwargs.keys()):
+            if key not in DEFAULT_GEN_KWARGS:
+                generation_kwargs.pop(key)
+        return generation_kwargs
+
+    def _batch_chat_multi_image(
+        self,
+        pixel_values: torch.Tensor,
+        questions: List[str],
+        generation_config: dict,
+        num_patches_lists: List[List[int]],
+    ) -> List[str]:
+        """Batch InternVL video prompts with multiple <image> placeholders each."""
+        model_module = import_module(self.model.__class__.__module__)
+        get_conv_template = getattr(model_module, "get_conv_template")
+        img_start_token = "<img>"
+        img_end_token = "</img>"
+        img_context_token = "<IMG_CONTEXT>"
+
+        self.model.img_context_token_id = self.tokenizer.convert_tokens_to_ids(img_context_token)
+
+        queries = []
+        sep = None
+        for question, num_patches_list in zip(questions, num_patches_lists):
+            if pixel_values is not None and "<image>" not in question:
+                question = "<image>\n" + question
+            template = get_conv_template(self.model.template)
+            template.system_message = self.model.system_message
+            template.append_message(template.roles[0], question)
+            template.append_message(template.roles[1], None)
+            query = template.get_prompt()
+            sep = template.sep.strip()
+
+            for num_patches in num_patches_list:
+                image_tokens = img_start_token + img_context_token * self.model.num_image_token * num_patches + img_end_token
+                query = query.replace("<image>", image_tokens, 1)
+            if "<image>" in query:
+                raise ValueError("InternVL video prompt still has unreplaced <image> placeholders after batch prompt construction")
+            queries.append(query)
+
+        old_padding_side = self.tokenizer.padding_side
+        try:
+            self.tokenizer.padding_side = "left"
+            model_inputs = self.tokenizer(queries, return_tensors="pt", padding=True)
+            input_ids = model_inputs["input_ids"].to(self.model.device)
+            attention_mask = model_inputs["attention_mask"].to(self.model.device)
+            generation_config = dict(generation_config)
+            generation_config["eos_token_id"] = self.tokenizer.convert_tokens_to_ids(sep)
+            generation_output = self.model.generate(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                **generation_config,
+            )
+        finally:
+            self.tokenizer.padding_side = old_padding_side
+
+        responses = self.tokenizer.batch_decode(generation_output, skip_special_tokens=True)
+        return [response.split(sep)[0].strip() for response in responses]
+
+    def _generate_until_video_batched(self, requests: List[Instance]) -> List[str]:
+        res: List[Optional[str]] = [None] * len(requests)
+        pbar = tqdm(total=len(requests), disable=(self.rank != 0), desc="Model Responding")
+        dynamic_max_num = max(1, min(self.max_num, self.total_max_num // self.num_frame))
+
+        batch_positions: List[int] = []
+        batch_questions: List[str] = []
+        batch_pixel_values: List[torch.Tensor] = []
+        batch_num_patches_lists: List[List[int]] = []
+        batch_gen_kwargs: Optional[dict] = None
+
+        def flush_batch() -> None:
+            nonlocal batch_positions, batch_questions, batch_pixel_values, batch_num_patches_lists, batch_gen_kwargs
+            if not batch_positions:
+                return
+            pixel_values = torch.cat(batch_pixel_values, dim=0).to(torch.bfloat16).to(self._device)
+            responses = self._batch_chat_multi_image(
+                pixel_values,
+                batch_questions,
+                dict(batch_gen_kwargs or DEFAULT_GEN_KWARGS),
+                batch_num_patches_lists,
+            )
+            for response_index, response in zip(batch_positions, responses):
+                res[response_index] = response
+            pbar.update(len(batch_positions))
+            batch_positions = []
+            batch_questions = []
+            batch_pixel_values = []
+            batch_num_patches_lists = []
+            batch_gen_kwargs = None
+
+        for index, request in enumerate(requests):
+            contexts, gen_kwargs, doc_to_visual, doc_id, task, split = request.arguments
+            doc = self.task_dict[task][split][doc_id]
+            generation_kwargs = self._normalize_generation_kwargs(gen_kwargs)
+
+            if batch_gen_kwargs is not None and generation_kwargs != batch_gen_kwargs:
+                flush_batch()
+
+            visuals = self.flatten([doc_to_visual(doc)])
+            if len(visuals) != 1:
+                flush_batch()
+                self._record_video_failure(
+                    request,
+                    doc,
+                    visuals,
+                    error_type="ValueError",
+                    error_message=f"Only one video is supported, but got {len(visuals)} videos.",
+                )
+                res[index] = VIDEO_READ_FAILURE_SENTINEL
+                pbar.update(1)
+                continue
+
+            video_path = visuals[0]
+            known_bad = self.video_failure_registry.get_entry(video_path)
+            if known_bad is not None:
+                flush_batch()
+                self._record_video_failure(
+                    request,
+                    doc,
+                    video_path,
+                    error_type=str(known_bad.get("latest_error_type", "") or "KnownBadVideo"),
+                    error_message=str(known_bad.get("latest_error_message", "") or "known bad video from shared registry"),
+                    known_bad_video=True,
+                )
+                res[index] = VIDEO_READ_FAILURE_SENTINEL
+                pbar.update(1)
+                continue
+
+            try:
+                pixel_values, num_patches_list = load_video(video_path, input_size=self.input_size, num_segments=self.num_frame, max_num=dynamic_max_num)
+            except Exception as exc:
+                flush_batch()
+                self._record_video_failure(
+                    request,
+                    doc,
+                    video_path,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc).strip(),
+                )
+                res[index] = VIDEO_READ_FAILURE_SENTINEL
+                pbar.update(1)
+                continue
+
+            video_prefix = "".join([f"Frame{i + 1}: <image>\n" for i in range(len(num_patches_list))])
+            batch_positions.append(index)
+            batch_questions.append(video_prefix + contexts)
+            batch_pixel_values.append(pixel_values)
+            batch_num_patches_lists.append(num_patches_list)
+            batch_gen_kwargs = generation_kwargs
+
+            if len(batch_positions) >= self.batch_size_per_gpu:
+                flush_batch()
+
+        flush_batch()
+        pbar.close()
+        return [response if response is not None else VIDEO_READ_FAILURE_SENTINEL for response in res]
+
     def _record_video_failure(
         self,
         request: Instance,
@@ -476,6 +698,9 @@ class InternVL3(lmms):
         Returns:
             List of generated response strings.
         """
+        if self.modality == "video" and self.batch_size_per_gpu > 1:
+            return self._generate_until_video_batched(requests)
+
         res: List[str] = []
         pbar = tqdm(total=len(requests), disable=(self.rank != 0), desc="Model Responding")
 

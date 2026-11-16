@@ -1,9 +1,8 @@
 from typing import Callable, Dict, Union
 
 import evaluate as hf_evaluate
-from loguru import logger as eval_logger
-
 from lmms_eval.api.model import lmms
+from loguru import logger as eval_logger
 
 MODEL_REGISTRY = {}
 

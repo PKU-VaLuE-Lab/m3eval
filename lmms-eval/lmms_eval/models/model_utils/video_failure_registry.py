@@ -21,6 +21,8 @@ NON_REGISTRY_ERROR_MESSAGE_PATTERNS = (
     "cudnn_status_alloc_failed",
     "shape mismatch",
     "cannot be broadcast to indexing result",
+    "expected all tensors to be on the same device",
+    "different from other tensors on cuda",
 )
 
 

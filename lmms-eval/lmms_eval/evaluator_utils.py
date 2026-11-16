@@ -7,7 +7,6 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-
 from lmms_eval.api.group import ConfigurableGroup
 from lmms_eval.api.metrics import (
     aggregate_subtask_metrics,

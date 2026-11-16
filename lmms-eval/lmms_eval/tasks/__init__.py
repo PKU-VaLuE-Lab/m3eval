@@ -6,12 +6,11 @@ import os
 from functools import partial
 from typing import Dict, List, Literal, Mapping, Optional, Union
 
-from loguru import logger as eval_logger
-
 from lmms_eval import utils
 from lmms_eval.api.group import ConfigurableGroup, GroupConfig
 from lmms_eval.api.task import ConfigurableMessagesTask, ConfigurableTask, Task
 from lmms_eval.evaluator_utils import get_subtask_list
+from loguru import logger as eval_logger
 
 GROUP_ONLY_KEYS = list(GroupConfig().to_dict().keys())
 

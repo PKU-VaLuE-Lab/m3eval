@@ -828,6 +828,38 @@ def import_function(loader, node):
         raise ImportError(f"Failed to import function '{function_name}' from module '{module_name}'. " f"Tried relative path '{module_path}' and absolute import.") from ex
 
 
+_ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
+
+
+def _expand_env_default_string(value: str) -> str:
+    if "${" not in value:
+        return value
+
+    def replace(match: re.Match) -> str:
+        name = match.group(1)
+        default = match.group(2)
+        current = os.environ.get(name)
+        if current not in (None, ""):
+            return current
+        if default is not None:
+            return default
+        return match.group(0)
+
+    return _ENV_DEFAULT_PATTERN.sub(replace, value)
+
+
+def _expand_yaml_env_defaults(value):
+    if isinstance(value, str):
+        return _expand_env_default_string(value)
+    if isinstance(value, list):
+        return [_expand_yaml_env_defaults(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_expand_yaml_env_defaults(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _expand_yaml_env_defaults(item) for key, item in value.items()}
+    return value
+
+
 def load_yaml_config(yaml_path=None, yaml_config=None, yaml_dir=None, mode="full"):
     if mode == "simple":
         constructor_fn = ignore_constructor
@@ -871,8 +903,8 @@ def load_yaml_config(yaml_path=None, yaml_config=None, yaml_dir=None, mode="full
                 raise ex
 
         final_yaml_config.update(yaml_config)
-        return final_yaml_config
-    return yaml_config
+        return _expand_yaml_env_defaults(final_yaml_config)
+    return _expand_yaml_env_defaults(yaml_config)
 
 
 def regex_replace(string, pattern, repl, count: int = 0):

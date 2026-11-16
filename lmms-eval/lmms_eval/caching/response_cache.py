@@ -19,9 +19,8 @@ import time
 from functools import partial
 from typing import Any, Dict, List, Optional, Union
 
-from loguru import logger as eval_logger
-
 from lmms_eval.api.instance import Instance
+from loguru import logger as eval_logger
 
 CACHE_RELEVANT_KEYS = frozenset(
     {

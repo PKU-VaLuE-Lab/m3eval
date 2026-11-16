@@ -4,10 +4,9 @@ from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
 import pandas as pd
+from lmms_eval.loggers.utils import _handle_non_serializable, remove_none_pattern
 from loguru import logger
 from packaging.version import Version
-
-from lmms_eval.loggers.utils import _handle_non_serializable, remove_none_pattern
 
 
 def get_wandb_printer() -> Literal["Printer"]:

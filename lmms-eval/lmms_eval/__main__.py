@@ -1,30 +1,10 @@
 import sys
 
-# Early TUI detection - before heavy imports
-if "--tui" in sys.argv:
-    try:
-        from lmms_eval.tui.cli import main as tui_main
-
-        tui_main()
-        sys.exit(0)
-    except ImportError as e:
-        print("TUI mode requires 'textual' package. Install with: pip install lmms_eval[tui]")
-        print(f"Error: {e}")
-        sys.exit(1)
-
-# Show quick help when no args provided (before heavy imports)
+# The public runner prepares the frozen inputs and selects each stage's settings.
 if len(sys.argv) == 1:
-    print("┌───────────────────────────────────────────────────────────────────────────────┐")
-    print("│ LMMs-Eval: Evaluation framework for Large Multimodal Models                   │")
-    print("├───────────────────────────────────────────────────────────────────────────────┤")
-    print("│ Usage:                                                                        │")
-    print("│   lmms-eval --model MODEL --tasks TASKS [options]                             │")
-    print("│   lmms-eval --tui              # Interactive TUI mode                         │")
-    print("│   lmms-eval --help             # Full help                                    │")
-    print("├───────────────────────────────────────────────────────────────────────────────┤")
-    print("│ Example:                                                                      │")
-    print("│   lmms-eval --model llava --tasks mme --batch_size 1                          │")
-    print("└───────────────────────────────────────────────────────────────────────────────┘")
+    print("M3Eval: InternVL3.5-8B evaluation with lmms-eval")
+    print("Use the repository's unified run script for paper reproduction.")
+    print("Use python -m lmms_eval --help for the underlying evaluation CLI.")
     sys.exit(0)
 
 import argparse
@@ -44,11 +24,9 @@ warnings.simplefilter("ignore", category=DeprecationWarning)
 
 from typing import Union
 
+import lmms_eval.tasks
 from accelerate import Accelerator
 from accelerate.utils import InitProcessGroupKwargs
-from loguru import logger as eval_logger
-
-import lmms_eval.tasks
 from lmms_eval import evaluator, utils
 from lmms_eval.api.metrics import power_analysis
 from lmms_eval.api.registry import ALL_TASKS
@@ -59,6 +37,7 @@ from lmms_eval.utils import (
     make_table,
     simple_parse_args_string,
 )
+from loguru import logger as eval_logger
 
 
 def _int_or_none_list_arg_type(min_len: int, max_len: int, defaults: str, value: str, split_char: str = ","):
@@ -176,7 +155,7 @@ def parse_eval_args() -> argparse.Namespace:
         default="",
         help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified",
     )
-    parser.add_argument("--model", default="hf", help="Name of model e.g. `hf`")
+    parser.add_argument("--model", default="internvl3_5", help="InternVL model adapter (internvl3_5)")
     parser.add_argument(
         "--tasks",
         default=None,
@@ -185,12 +164,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_args",
         default="",
-        help="String arguments for model, e.g. `pretrained=EleutherAI/pythia-160m,dtype=float32`",
-    )
-    parser.add_argument(
-        "--launcher_args",
-        default=None,
-        help="String arguments for launcher for local llm as judge, e.g. `tp=8`, if None then no launcher will be used.",
+        help="Model arguments, e.g. `pretrained=/path/to/InternVL3_5-8B`",
     )
     parser.add_argument(
         "--num_fewshot",
@@ -383,11 +357,6 @@ def parse_eval_args() -> argparse.Namespace:
         help="Force the evaluation to use the simple mode of the models",
     )
     parser.add_argument(
-        "--tui",
-        action="store_true",
-        help="Launch interactive TUI mode for configuration",
-    )
-    parser.add_argument(
         "-n",
         "--repeats",
         "--num_samples",
@@ -396,7 +365,7 @@ def parse_eval_args() -> argparse.Namespace:
         default=1,
         help=("Number of repeated generations per question for model stability " "measurement. Backward-compatible alias: --num_samples. " "When n > 1, enables k-samples " "mode and computes EA, CA, IV, CR metrics."),
     )
-    parser.add_argument("--baseline", type=str, default=None, help="Baseline for paired t-test comparison. Accepts: local JSONL path, hf://user/repo, or preset name (e.g., qwen25vl).")
+    parser.add_argument("--baseline", type=str, default=None, help="Baseline for paired t-test comparison. Accepts a local JSONL path or hf://user/repo.")
 
     # Power Analysis arguments
     parser.add_argument(
@@ -680,7 +649,6 @@ def cli_evaluate_single(args: Union[argparse.Namespace, None] = None) -> None:
         datetime_str=datetime_str,
         distributed_executor_backend="torchrun" if (torch.distributed.is_available() and torch.distributed.is_initialized()) else "accelerate",
         force_simple=args.force_simple,
-        launcher_args=args.launcher_args,
         repeats=args.repeats,
         baseline=args.baseline,
         **request_caching_args,

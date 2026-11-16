@@ -3,7 +3,6 @@ import os
 import pickle
 
 import dill
-
 from lmms_eval.loggers.utils import _handle_non_serializable, is_serializable
 from lmms_eval.utils import eval_logger
 

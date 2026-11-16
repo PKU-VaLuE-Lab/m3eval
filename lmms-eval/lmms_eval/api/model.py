@@ -5,10 +5,9 @@ from typing import List, Optional, Tuple, Type, TypeVar
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from loguru import logger as eval_logger
-
 from lmms_eval import utils
 from lmms_eval.api.instance import Instance
+from loguru import logger as eval_logger
 
 T = TypeVar("T", bound="lmms")
 

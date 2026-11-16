@@ -9,7 +9,6 @@ from typing import Any, List
 
 import numpy as np
 import sacrebleu
-
 from lmms_eval.api.registry import register_aggregation, register_metric
 
 
@@ -564,43 +563,6 @@ def stderr_for_metric(metric, bootstrap_iters: int):
         chrf,
         ter,
     ]
-
-    # Optional imports for tasks with extra dependencies (spacy, etc.)
-    try:
-        from lmms_eval.tasks.amber_g.utils import (
-            amber_g_aggregate_chair,
-            amber_g_aggregate_cog,
-            amber_g_aggregate_cover,
-            amber_g_aggregate_hal,
-        )
-
-        bootstrappable.extend(
-            [
-                amber_g_aggregate_chair,
-                amber_g_aggregate_cover,
-                amber_g_aggregate_hal,
-                amber_g_aggregate_cog,
-            ]
-        )
-    except ImportError:
-        pass
-
-    try:
-        from lmms_eval.tasks.coco_cap_chair.utils import (
-            coco_cap_chair_aggregate_results_chair_i,
-            coco_cap_chair_aggregate_results_chair_s,
-            coco_cap_chair_aggregate_results_recall,
-        )
-
-        bootstrappable.extend(
-            [
-                coco_cap_chair_aggregate_results_chair_i,
-                coco_cap_chair_aggregate_results_chair_s,
-                coco_cap_chair_aggregate_results_recall,
-            ]
-        )
-    except ImportError:
-        pass
 
     if metric in bootstrappable:
         return lambda x: bootstrap_stderr(metric, x, iters=bootstrap_iters)

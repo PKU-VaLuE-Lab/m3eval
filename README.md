@@ -28,6 +28,7 @@
 
 ## News
 
+- **2026-11-16**: update codebase.
 - **2026-6-4**: We released the M³Eval benchmark, code, and project page.
 
 ## M³Eval Overview
@@ -74,75 +75,47 @@ Average accuracy under two symbolic attributes, scene and action, averaged over 
 
 ### Install
 
+Requires Linux x86-64, Git, curl, and a working NVIDIA GPU driver (`nvidia-smi`).
+
 ```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
 git clone https://github.com/PKU-VaLuE-Lab/m3eval.git
-cd m3eval/lmms-eval
-uv pip install -e ".[all]"
-cd ..
+cd m3eval
+uv sync --locked
 ```
+
+`uv sync` installs Python 3.10 and the locked dependencies. Run the remaining commands from the repository root.
 
 ### Download the Dataset
 
 The benchmark is composed from existing public benchmarks. Users must follow the original licenses and usage terms of each source dataset.
 
-Download the dataset and unpack it into `data/m3eval/`:
-
 ```bash
-huggingface-cli download PKU-VaLuE-Lab/m3eval \
-  --repo-type dataset \
-  --local-dir data/m3eval
-
-bash data/m3eval/unpack_archives.sh
+uv run python scripts/open_source/download_dataset.py --local-dir data/m3eval
 ```
 
-After unpacking, `data/m3eval/` should contain:
+Downloads resume automatically and verify file checksums. Add `--include-prefix-videos` to include the original N-back concatenated videos.
 
-```text
-data/m3eval/
-├── qa_root/
-├── questions/
-├── nback/
-├── viewer/
-└── videos/
-    ├── interleaved/
-    ├── memory_interference/
-    ├── split_screen/
-    └── nback/
+Download InternVL3.5-8B:
+
+```bash
+uv run hf download OpenGVLab/InternVL3_5-8B \
+  --revision 9bb6a56ad9cc69db95e2d4eeb15a52bbcac4ef79 \
+  --local-dir models/InternVL3_5-8B
 ```
 
 ### Evaluation
 
-The main public entry point is:
-
 ```bash
-bash lmms-eval/scripts/run_m3eval_vllm.sh \
-  --model_path /path/to/your/model \
-  --task m3eval \
-  --gpus 0 \
-  --batch_size 1
+bash lmms-eval/scripts/run_m3eval_internvl.sh \
+  --data-root data/m3eval \
+  --model-path models/InternVL3_5-8B \
+  --task m3eval --gpus 0,1 \
+  --output-root lmms-eval/output/m3eval/full
 ```
 
-For multi-GPU data-parallel evaluation, use:
-
-```bash
-bash lmms-eval/scripts/run_m3eval_sharded_vllm.sh \
-  --model_path /path/to/your/model \
-  --task m3eval \
-  --gpus 0,1,2,3 \
-  --num_processes 4 \
-  --batch_size 1
-```
-
-For a quick smoke run:
-
-```bash
-bash lmms-eval/scripts/run_m3eval_vllm.sh \
-  --model_path /path/to/your/model \
-  --task m3eval_memory_interference \
-  --gpus 0 \
-  --limit 1 \
-  --max_frame_num 8
-```
+For a quick smoke run, add `--limit-per-task 1 --nback-tests-per-split 1` and use a different output directory. Use `--gpus 0,1,2,3,4,5,6,7` to run with eight GPUs.
 
 Useful task names:
 
@@ -152,16 +125,7 @@ Useful task names:
 - `m3eval_interleaved`
 - `m3eval_nback`
 
-The script writes outputs to `lmms-eval/output/m3eval/` by default. See [lmms-eval/README_M3EVAL.md](lmms-eval/README_M3EVAL.md) for the dataset layout and task names.
-
-To convert lmms-eval outputs into paper-facing tables, pass `*_results.json` from a full `--task m3eval` run:
-
-```bash
-python lmms-eval/scripts/aggregate_m3eval_results.py \
-  lmms-eval/output/m3eval/path/to/*_results.json
-```
-
-If you aggregate a single subtask result or a smoke run, uncovered fields will appear as `N/A`.
+The split-screen and interleaved tasks include source-memory and false-memory questions. The runner saves model responses, scores, and `m3eval_paper_tables.md` in the output directory for comparison with the paper. Use a new output directory for each run; uncovered metrics in partial runs appear as `N/A`.
 
 ## Dataset Examples
 

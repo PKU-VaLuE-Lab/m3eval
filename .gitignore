@@ -1,8 +1,13 @@
+# Local environments, assets, and generated outputs
+.venv/
+.venv
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.egg-info/
 build/
 dist/
-data/m3eval/
-lmms-eval/output/
+models/
+data/
+lmms-eval/output*/
+*.log
+.DS_Store

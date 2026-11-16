@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "internvl35-paper-2026",
+  "tests_per_split": 32,
+  "clip_count_sweep": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+    10,
+    12
+  ],
+  "nback_max_n": 4,
+  "frames_per_clip": 8,
+  "source_files_sha256": {
+    "action": "0841d12ab8d2b11a706703cc76d5ce7fb68f5fceb29d10344744e43e9d3835a7",
+    "scene": "ba4a66c2765f9ac6678aa8d77b52acde19d42105791afad3325464f6d1cf3d41"
+  },
+  "full_selection_sha256": {
+    "action": "c8693b9970ddb69755b4160ad1f075b01d4e3e84baa65421f1a9d88f2c37fba1",
+    "scene": "9eef090d68af934a2c3138d8b597768de3250ef4d2b999def824bcc7c379c8c9"
+  }
+}

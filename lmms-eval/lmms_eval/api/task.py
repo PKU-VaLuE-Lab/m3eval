@@ -27,12 +27,6 @@ import numpy as np
 from accelerate import Accelerator
 from datasets import Audio, DownloadConfig, Image, Sequence
 from huggingface_hub import snapshot_download
-from loguru import logger as eval_logger
-from PIL import Image as PIL_Image
-from PIL import ImageFile
-from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed
-from tqdm import tqdm
-
 from lmms_eval import utils
 from lmms_eval.api import samplers
 from lmms_eval.api.instance import Instance
@@ -47,6 +41,11 @@ from lmms_eval.api.registry import (
 )
 from lmms_eval.caching.cache import load_from_cache, save_to_cache
 from lmms_eval.filters import build_filter_ensemble
+from loguru import logger as eval_logger
+from PIL import Image as PIL_Image
+from PIL import ImageFile
+from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed
+from tqdm import tqdm
 
 # HuggingfaceM4/NoCaps contains truncated image in test split
 # Include this inside code block to avoid error
